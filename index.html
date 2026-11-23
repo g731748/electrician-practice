@@ -320,25 +320,53 @@ let syncT,syncing=false;
 function queueSync(){S.at=Date.now();clearTimeout(syncT);syncT=setTimeout(async()=>{if(!db||!uid||!canW||syncing)return;syncing=true;
  try{const c=Object.assign({},S);delete c.sess;await db.doc('data/users/'+uid+'/progress').set({at:S.at,s:JSON.stringify(c)})}catch(e){}syncing=false},2500)}
 function wk(){const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-d.getDay());return d.toISOString().slice(0,10)}
-async function pushScore(R){if(!db||!uid||!canW)return;try{
+async function pushScore(R){if(!db){if(!S.cls)return;try{const tp={};R.qs.forEach(n=>{if(R.ans[n]==null)return;const t=BY[n].t;const a=tp[t]||[0,0];a[0]++;if(R.ans[n]===BY[n].a)a[1]++;tp[t]=a});
+ await rpc('push_score',{...me(),p_wk:wk(),p_r:R.r,p_tot:R.tot,p_topics:tp});if(R.code)await rpc('add_challenge',{...me(),p_code:R.code,p_r:R.r,p_tot:R.tot})}catch(e){}return}
+ if(!uid||!canW)return;try{
  const ref=db.doc('scores/'+uid);const g=await ref.get();const o=g.exists?JSON.parse(JSON.stringify(g.data())):{};const w=wk();
  if(o.wk!==w){o.wk=w;o.wt=0;o.wr=0}o.wt=(o.wt||0)+R.tot;o.wr=(o.wr||0)+R.r;o.tot=(o.tot||0)+R.tot;o.r=(o.r||0)+R.r;o.topics=o.topics||{};
  R.qs.forEach(n=>{const t=BY[n].t;const a=o.topics[t]||[0,0];a[0]++;if(R.ans[n]===BY[n].a)a[1]++;o.topics[t]=a});o.at=Date.now();await ref.set(o);
  if(R.code){const c=db.doc('challenges/'+uid);const cg=await c.get();const co=cg.exists?JSON.parse(JSON.stringify(cg.data())):{items:{}};co.items=co.items||{};
   co.items[R.code]={r:R.r,tot:R.tot,at:Date.now()};await c.set(co)}}catch(e){if(e&&e.code==='invalid_argument')canW=false}}
-async function loadTips(ns){if(!db)return;try{const s=await db.collection('tips').get();const tips={};
+async function loadTips(ns){if(!db){if(!S.cls)return;try{const r=await rpc('get_tips',{p_class:S.cls.code});const tips={};(r||[]).forEach(x=>(tips[x.qn]=tips[x.qn]||[]).push(x));
+ document.querySelectorAll('.tips').forEach(el=>{el.innerHTML='';(tips[el.dataset.q]||[]).forEach(x=>{const p=document.createElement('p');p.className='note';p.textContent='💡 '+(x.name||'חבר לכיתה')+': '+String(x.body).slice(0,400);el.appendChild(p)})})}catch(e){}return}
+ try{const s=await db.collection('tips').get();const tips={};
  s.docs.forEach(d=>{const it=(d.data()||{}).items||{};Object.entries(it).forEach(([n,t])=>{(tips[n]=tips[n]||[]).push({u:d.id,t})})});
  const ids=[...new Set(Object.values(tips).flat().map(x=>x.u))];const ps=user&&ids.length?await user.profiles(ids):{};
  document.querySelectorAll('.tips').forEach(el=>{const L2=tips[el.dataset.q]||[];el.innerHTML='';L2.forEach(x=>{const p=document.createElement('p');p.className='note';
   p.textContent='💡 '+((ps[x.u]&&ps[x.u].name)||'חבר לכיתה')+': '+String(x.t).slice(0,400);el.appendChild(p)})})}catch(e){}}
 function tipForm(n,kind){const box=document.querySelector(`.tips[data-q="${n}"]`);if(!box)return;
- if(!db||!uid){toast('שיתוף עם הכיתה זמין רק כשהדף פתוח דרך Claude עם הרשאת משתתף');return}
+ if(!db&&!S.cls){toast('כדי לשתף, הצטרף קודם לכיתה בלשונית כיתה');location.hash='#class';return}if(db&&!uid){toast('שיתוף עם הכיתה לא זמין כאן');return}
  const f=document.createElement('div');f.innerHTML=`<label>${kind==='tips'?'הטיפ שלך (יופיע לכל הכיתה)':'מה לדעתך שגוי בשאלה?'}</label><textarea rows="2" maxlength="400"></textarea><div class="row" style="margin-top:6px"><button class="pri">שלח</button><span class="mut"></span></div>`;
  box.appendChild(f);const ta=f.querySelector('textarea');ta.focus();
  f.querySelector('button').onclick=async()=>{const t=ta.value.trim();const m=f.querySelector('.mut');if(!t){m.textContent='כתוב משהו קודם';return}
-  try{const ref=db.doc(kind+'/'+uid);const g=await ref.get();const o=g.exists?JSON.parse(JSON.stringify(g.data())):{items:{}};o.items=o.items||{};o.items[n]=t;await ref.set(o);
+  try{if(!db){await rpc('add_note',{...me(),p_kind:kind==='tips'?'tip':'report',p_qn:n,p_body:t});f.remove();toast(kind==='tips'?'הטיפ נשמר ויופיע לחברים':'הדיווח נשמר');if(kind==='tips')loadTips();return}
+  const ref=db.doc(kind+'/'+uid);const g=await ref.get();const o=g.exists?JSON.parse(JSON.stringify(g.data())):{items:{}};o.items=o.items||{};o.items[n]=t;await ref.set(o);
   f.remove();toast(kind==='tips'?'הטיפ נשמר ויופיע לחברים':'הדיווח נשמר');if(kind==='tips')loadTips()}catch(e){m.textContent='לא נשמר – ייתכן שאין לך הרשאת כתיבה בדף'}}}
 function seeded(code){let h=1779033703;for(const c of code)h=Math.imul(h^c.charCodeAt(0),3432918353),h=h<<13|h>>>19;return()=>{h=Math.imul(h^h>>>16,2246822507);h=Math.imul(h^h>>>13,3266489909);return((h^=h>>>16)>>>0)/4294967296}}
+// --- Supabase (לקישור הציבורי) ---
+const SB='https://ioakzpvvcgnaogtjkbtt.supabase.co',SBK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvYWt6cHZ2Y2duYW9ndGprYnR0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU0NTEzMjQsImV4cCI6MjExMTAyNzMyNH0.mCGPgjLeFJTAYU6SN91nlDJ55u7do2kujqqqebn-z88';
+async function rpc(fn,args){const r=await fetch(SB+'/rest/v1/rpc/'+fn,{method:'POST',headers:{'Content-Type':'application/json',apikey:SBK,Authorization:'Bearer '+SBK},body:JSON.stringify(args)});
+ const t=await r.text();if(!r.ok)throw new Error(t);return t?JSON.parse(t):null}
+const me=()=>({p_class:S.cls.code,p_player:S.cls.pid,p_secret:S.cls.sec,p_name:S.cls.name});
+function rid(){try{return crypto.randomUUID()}catch(e){return 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g,()=>(Math.random()*16|0).toString(16))}}
+function joinForm(){const c=document.createElement('div');c.className='card';
+ c.innerHTML=`<h2>הצטרפות לכיתה</h2><label for="jn_n">השם שלך (יופיע בטבלה)</label><input id="jn_n" maxlength="40" value="${esc(S.name||'')}">
+ <label for="jn_c">קוד כיתה</label><input id="jn_c" dir="ltr" placeholder="BS-0000"><p id="jn_e" class="mut" style="color:var(--bad);min-height:1.4em"></p>
+ <button class="pri" id="jn_b">הצטרף</button><p class="mut">אין סיסמה ואין חשבון. את קוד הכיתה מקבלים ממי שפתח אותה.</p>`;
+ app.querySelector('h1').after(c);['#lb','#wk2'].forEach(x=>$(x).textContent='מצטרפים לכיתה כדי לראות.');
+ $('#jn_b').onclick=async()=>{const n=$('#jn_n').value.trim(),code=$('#jn_c').value.trim().toUpperCase(),e=$('#jn_e');
+  if(!n){e.textContent='כתוב את השם שלך';return}if(!code){e.textContent='הזן קוד כיתה';return}e.textContent='';$('#jn_b').disabled=true;
+  try{if(!await rpc('class_exists',{p_class:code})){e.textContent='לא מצאתי כיתה עם הקוד הזה';$('#jn_b').disabled=false;return}
+   S.cls={code,pid:rid(),sec:rid()+rid(),name:n};if(!S.name)S.name=n.split(' ')[0];await rpc('join_class',me());save();toast('הצטרפת לכיתה '+code);clsView()}
+  catch(err){e.textContent='אין חיבור כרגע – נסה שוב';$('#jn_b').disabled=false}}}
+async function classData(){
+ if(!db){const [sc,ch]=await Promise.all([rpc('get_scores',{p_class:S.cls.code}),rpc('get_challenges',{p_class:S.cls.code})]);
+  return{rows:(sc||[]).map(r=>({...r,me:r.player_id===S.cls.pid})),ch:(ch||[]).map(x=>({...x,me:x.player_id===S.cls.pid}))}}
+ const s=await db.collection('scores').get();const rows=s.docs.map(d=>({u:d.id,...d.data()}));
+ const c=await db.collection('challenges').get();const ch=[];c.docs.forEach(d=>Object.entries((d.data()||{}).items||{}).forEach(([k,v])=>ch.push({code:k,u:d.id,...v})));
+ const ids=[...new Set(rows.map(r=>r.u).concat(ch.map(x=>x.u)))];const ps=user&&ids.length?await user.profiles(ids):{};
+ const nm=u=>(ps[u]&&ps[u].name)||'';rows.forEach(r=>{r.name=nm(r.u);r.me=r.u===uid});ch.forEach(x=>{x.name=nm(x.u);x.me=x.u===uid});ch.reverse();return{rows,ch}}
 async function clsView(){
  app.innerHTML=`<h1>הכיתה</h1>
  <div class="card"><h2>אתגר חבר</h2><p class="mut">צור קוד ושלח אותו לחבר. שניכם תקבלו בדיוק אותן 15 שאלות, והתוצאות יופיעו כאן.</p>
@@ -350,21 +378,20 @@ async function clsView(){
  const go=code=>{code=code.trim().toUpperCase();if(!/^[A-Z0-9]{4,8}$/.test(code)){toast('קוד לא תקין');return}start('ch',shuffle(Q.map(q=>q.n),seeded(code)).slice(0,15),0,code)};
  $('#mk').onclick=()=>{const c=Array.from({length:6},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*32)]).join('');$('#cd').value=c;toast('הקוד: '+c+' – שלח אותו לחבר')};
  $('#jn').onclick=()=>go($('#cd').value);
- if(!db){['#lb','#wk2'].forEach(s=>$(s).textContent='הטבלה המשותפת עובדת כשהדף פתוח דרך Claude וכל חבר נכנס עם החשבון שלו. בינתיים ההתקדמות נשמרת אצלך במכשיר.');return}
+ if(!db&&!S.cls){joinForm();return}
+ if(!db){const h=document.createElement('p');h.className='mut';h.innerHTML=`כיתה <b dir="ltr">${esc(S.cls.code)}</b> · מחובר כ: ${esc(S.cls.name)} · <a href="#" id="chg">החלף</a>`;app.querySelector('h1').after(h);
+  $('#chg').onclick=e=>{e.preventDefault();delete S.cls;save();clsView()}}
  const tm=setTimeout(()=>{if($('#lb').textContent==='טוען…')$('#lb').textContent='הנתונים עוד לא זמינים – נסה שוב בעוד רגע.'},10000);
- try{const s=await db.collection('scores').get();clearTimeout(tm);const w=wk();
-  const rows=s.docs.map(d=>({u:d.id,...d.data()})).filter(r=>r.wk===w&&r.wt>0).sort((a,b)=>b.wt-a.wt);
-  const ps=user&&rows.length?await user.profiles(rows.map(r=>r.u)):{};
-  $('#lb').innerHTML=rows.length?`<table><tbody>${rows.map((r,i)=>`<tr${r.u===uid?' style="font-weight:700"':''}><td>${i+1}.</td><td class="nmx" data-u="${esc(r.u)}"></td><td style="text-align:left;white-space:nowrap">${r.wt} שאלות · ${Math.round(r.wr/r.wt*100)}%</td></tr>`).join('')}</tbody></table>`:'עוד אין תוצאות השבוע. סיים תרגול כדי להופיע כאן.';
-  app.querySelectorAll('.nmx').forEach(td=>td.textContent=((ps[td.dataset.u]&&ps[td.dataset.u].name)||'חבר לכיתה')+(td.dataset.u===uid?' (אתה)':''));
-  const agg={};s.docs.forEach(d=>Object.entries((d.data()||{}).topics||{}).forEach(([t,a])=>{const x=agg[t]||[0,0];x[0]+=a[0];x[1]+=a[1];agg[t]=x}));
+ try{const d=await classData();clearTimeout(tm);const w=wk();
+  const rows=d.rows.filter(r=>r.wk===w&&r.wt>0).sort((a,b)=>b.wt-a.wt);
+  $('#lb').innerHTML=rows.length?`<table><tbody>${rows.map((r,i)=>`<tr${r.me?' style="font-weight:700"':''}><td>${i+1}.</td><td>${esc(r.name||'חבר לכיתה')}${r.me?' (אתה)':''}</td><td style="text-align:left;white-space:nowrap">${r.wt} שאלות · ${Math.round(r.wr/r.wt*100)}%</td></tr>`).join('')}</tbody></table>`:'עוד אין תוצאות השבוע. סיים תרגול כדי להופיע כאן.';
+  const agg={};d.rows.forEach(r=>Object.entries(r.topics||{}).forEach(([t,a])=>{const x=agg[t]||[0,0];x[0]+=+a[0];x[1]+=+a[1];agg[t]=x}));
   const tl=Object.entries(agg).filter(([t,a])=>a[0]>=5&&TN[t]).map(([t,a])=>[t,a[1]/a[0]]).sort((a,b)=>a[1]-b[1]).slice(0,5);
   $('#wk2').innerHTML=tl.length?tl.map(([t,m])=>`<div style="margin:8px 0"><div class="row" style="justify-content:space-between"><span>${TN[t]}</span><span style="color:${col(m)}">${Math.round(m*100)}%</span></div><div class="meter"><i style="width:${m*100}%;background:${col(m)}"></i></div></div>`).join(''):'צריך עוד קצת תרגול של הכיתה כדי לחשב.';
-  const c=await db.collection('challenges').get();const byCode={};c.docs.forEach(d=>Object.entries((d.data()||{}).items||{}).forEach(([k,v])=>{(byCode[k]=byCode[k]||[]).push({u:d.id,...v})}));
-  const mine=Object.keys(byCode).filter(k=>byCode[k].some(x=>x.u===uid)).slice(-5);
-  if(mine.length){const ids=[...new Set(mine.flatMap(k=>byCode[k].map(x=>x.u)))];const pp=await user.profiles(ids);
-   const box=$('#chb');box.innerHTML='<h3>האתגרים שלך</h3>';mine.forEach(k=>{const p=document.createElement('p');p.textContent=k+': '+byCode[k].sort((a,b)=>b.r-a.r).map(x=>((pp[x.u]&&pp[x.u].name)||'חבר')+' '+x.r+'/'+x.tot).join(' · ');box.appendChild(p)})}
- }catch(e){clearTimeout(tm);$('#lb').textContent='לא הצלחתי לטעון את נתוני הכיתה.';$('#wk2').textContent=''}
+  const byCode={};d.ch.forEach(x=>(byCode[x.code]=byCode[x.code]||[]).push(x));
+  const mine=Object.keys(byCode).filter(k=>byCode[k].some(x=>x.me)).slice(0,5);
+  if(mine.length){const box=$('#chb');box.innerHTML='<h3>האתגרים שלך</h3>';mine.forEach(k=>{const p=document.createElement('p');p.textContent=k+': '+byCode[k].sort((a,b)=>b.r-a.r).map(x=>(x.name||'חבר')+' '+x.r+'/'+x.tot).join(' · ');box.appendChild(p)})}
+ }catch(e){clearTimeout(tm);$('#lb').textContent='לא הצלחתי לטעון את נתוני הכיתה. בדוק חיבור לאינטרנט.';$('#wk2').textContent=''}
 }
 function report(){const tl=SUBJ.flatMap(s=>s.t.map(([id])=>id)).filter(t=>topicQs(t).length);const seen=Object.keys(S.p).length;
  const h=S.hist.slice(-10);return `דוח התקדמות${S.name?' – '+S.name:''} (${new Date().toLocaleDateString('he-IL')})\nשאלות שתרגלתי: ${seen} מתוך ${Q.length}\nמוכנות במתקני חשמל: ${Math.round(mastery(Q.map(q=>q.n))*100)}%\n`+
