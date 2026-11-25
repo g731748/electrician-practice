@@ -54,6 +54,9 @@ main{max-width:900px;margin:0 auto;padding:18px max(4vw,14px)}
 .mcb .lev i{position:absolute;inset-inline:2px;height:14px;border-radius:3px}
 .mcb .nm{font-weight:700;font-size:15px;line-height:1.25}.mcb.off{opacity:.55}
 .mcb.sel{outline:3px solid var(--accent)}
+.sjt{font-family:Assistant,Arial,sans-serif;font-size:14px;padding:5px 12px;border-radius:999px;border:1px solid #2e7d32;background:#e8f5e9;color:#1b5e20;cursor:pointer}
+.sjt.off{border-color:#c62828;background:#ffebee;color:#b71c1c}
+.sjx .rail{opacity:.4}.sjx .rail .nm{text-decoration:line-through}
 /* שאלה */
 .opt{display:block;width:100%;text-align:start;margin:8px 0;padding:12px 14px;border-radius:10px;border:1.5px solid var(--line);background:var(--panel);font-weight:400;line-height:1.45}
 .opt b{font-family:Rubik;margin-inline-end:8px}
@@ -119,13 +122,15 @@ const $=s=>document.querySelector(s);
 const app=$('#app');
 let S=load();
 function load(){let s;try{s=JSON.parse(localStorage.getItem('elx')||'null')}catch(e){}
- return Object.assign({p:{},track:'mus',exam:'',hist:[],flags:{},sess:null,last:null},s||{})}
+ return Object.assign({p:{},track:'mus',exam:'',hist:[],flags:{},hide:{},sess:null,last:null},s||{})}
 function save(){try{localStorage.setItem('elx',JSON.stringify(S))}catch(e){};queueSync()}
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.remove('hide');clearTimeout(t._);t._=setTimeout(()=>t.classList.add('hide'),2600)}
 // --- שליטה ---
 function qScore(n){const p=S.p[n];if(!p||!p.seen)return 0;return p.last?Math.min(1,.55+.15*p.box):.15}
 function mastery(ns){if(!ns.length)return null;return ns.reduce((a,n)=>a+qScore(n),0)/ns.length}
 function topicQs(t){return Q.filter(q=>q.t===t).map(q=>q.n)}
+const sjOf=q=>(q.n<1000&&TS[q.t]==='mach')?'inst':TS[q.t];
+const hid=q=>!!(S.hide&&S.hide[sjOf(q)]);
 function col(m){return m==null?'var(--line)':m>=.7?'var(--ok)':m>=.4?'var(--warn)':'var(--bad)'}
 function due(){const d=DAY();return Q.filter(q=>{const p=S.p[q.n];return p&&p.seen&&p.due<=d}).map(q=>q.n)}
 function record(n,ok){const p=S.p[n]||{box:0,seen:0,r:0,w:0};p.seen++;ok?p.r++:p.w++;p.last=ok;p.box=ok?Math.min(p.box+1,4):0;p.due=DAY()+(ok?IV[p.box]:1);S.p[n]=p}
@@ -175,19 +180,20 @@ let SEL=new Set();
 function topics(){
  app.innerHTML=`<h1>נושאים</h1><p class="mut">כל נושא הוא "מאמ"ת" בלוח. הידית עולה ככל שאתה שולט בו יותר: ירוק מעל 70%, כתום 40–70%, אדום מתחת. בחר נושא אחד או כמה ותתחיל.</p>
  <div class="card"><div class="row" style="justify-content:space-between">
- <span id="selc">${SEL.size?`נבחרו ${SEL.size} נושאים`:'לא נבחר נושא – יתורגל כל המאגר'}</span>
+ <span id="selc">${SEL.size?`נבחרו ${SEL.size} נושאים`:(Object.values(S.hide||{}).some(Boolean)?`יתורגלו ${Q.filter(q=>!hid(q)).length} שאלות מהנושאים שבתרגול`:'לא נבחר נושא – יתורגל כל המאגר')}</span>
  <div class="row"><select id="cnt" style="width:auto"><option value="10">10 שאלות</option><option value="20" selected>20 שאלות</option><option value="40">40 שאלות</option><option value="999">כל השאלות</option></select>
  <button class="pri" id="go">התחל תרגול</button></div></div>
  <div class="row" style="margin-top:8px"><button id="wr">רק מה שטעיתי</button><button id="fl">שאלות שסימנתי</button><button id="unc">רק שאלות שלא ראיתי</button></div></div>
- <div class="board">${SUBJ.map(s=>{const ns=s.t.flatMap(([id])=>topicQs(id));const m=mastery(ns);
- return `<div class="subj"><span>${s.nm}</span><span class="mut">${ns.length?`${ns.length} שאלות · ${Math.round(m*100)}%`:'ממתין למאגר'}</span></div>
- <div class="rail">${s.t.map(([id,nm])=>{const qs=topicQs(id);const m=mastery(qs);const lv=m==null?0:m;
- return `<button class="mcb ${qs.length?'':'off'} ${SEL.has(id)?'sel':''}" data-t="${id}" ${qs.length?'':'disabled'} aria-pressed="${SEL.has(id)}">
- <span class="row" style="justify-content:space-between;width:100%"><span class="lev"><i style="top:${2+(1-lv)*14}px;background:${col(m)}"></i></span><span class="mut">${qs.length?qs.length+' ש׳':'—'}</span></span>
- <span class="nm">${nm}</span><span class="mut" style="font-size:13px">${qs.length?Math.round(m*100)+'% שליטה':'אין עדיין שאלות במאגר'}</span></button>`}).join('')}</div>`}).join('')}</div>
+ <div class="board">${SUBJ.map(s=>{const tl=s.t.filter(([id])=>topicQs(id).length);if(!tl.length)return '';const ns=tl.flatMap(([id])=>topicQs(id));const m=mastery(ns);const off=!!(S.hide&&S.hide[s.id]);const cnt=Q.filter(q=>sjOf(q)===s.id).length;
+ return `<div class="${off?'sjx':''}"><div class="subj" style="align-items:center"><span>${s.nm} <span class="mut" style="font-size:13px">${cnt} שאלות · ${Math.round(m*100)}%</span></span><button class="sjt ${off?'off':''}" data-s="${s.id}" aria-pressed="${!off}">${off?'✕ מוסתר':'✓ בתרגול'}</button></div>
+ <div class="rail">${tl.map(([id,nm])=>{const qs=topicQs(id);const m=mastery(qs);const lv=m==null?0:m;
+ return `<button class="mcb ${SEL.has(id)&&!off?'sel':''}" data-t="${id}" ${off?'disabled':''} aria-pressed="${SEL.has(id)}">
+ <span class="row" style="justify-content:space-between;width:100%"><span class="lev"><i style="top:${2+(1-lv)*14}px;background:${col(m)}"></i></span><span class="mut">${(off?qs.length:Q.filter(q=>q.t===id&&!hid(q)).length)+' ש׳'}</span></span>
+ <span class="nm">${nm}</span><span class="mut" style="font-size:13px">${Math.round(m*100)+'% שליטה'}</span></button>`}).join('')}</div></div>`}).join('')}</div>
  `;
  app.querySelectorAll('.mcb').forEach(b=>b.onclick=()=>{const t=b.dataset.t;SEL.has(t)?SEL.delete(t):SEL.add(t);topics()});
- const pool=()=>Q.filter(q=>!SEL.size||SEL.has(q.t)).map(q=>q.n);
+ app.querySelectorAll('.sjt').forEach(b=>b.onclick=()=>{const id=b.dataset.s;S.hide=S.hide||{};S.hide[id]=!S.hide[id];if(S.hide[id])SUBJ.find(x=>x.id===id).t.forEach(([t])=>SEL.delete(t));save();topics()});
+ const pool=()=>Q.filter(q=>!hid(q)&&(!SEL.size||SEL.has(q.t))).map(q=>q.n);
  $('#go').onclick=()=>start('practice',shuffle(pool()).slice(0,+$('#cnt').value));
  $('#wr').onclick=()=>{const w=pool().filter(n=>S.p[n]&&S.p[n].last===false);w.length?start('review',shuffle(w)):toast('אין כרגע שאלות שטעית בהן')};
  $('#fl').onclick=()=>{const w=pool().filter(n=>S.flags[n]);w.length?start('practice',w):toast('עוד לא סימנת שאלות')};
